@@ -1,0 +1,3 @@
+trainingpeaks-mcp @ git+https://github.com/JamsusMaximus/trainingpeaks-mcp.git
+uvicorn[standard]
+starlette

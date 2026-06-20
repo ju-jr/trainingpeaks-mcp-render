@@ -1,0 +1,9 @@
+services:
+  - type: web
+    name: trainingpeaks-mcp
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python sse_server.py
+    envVars:
+      - key: TP_COOKIE
+        sync: false   # preencha manualmente no painel do Render
