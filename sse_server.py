@@ -1,15 +1,13 @@
 """
 SSE wrapper for TrainingPeaks MCP Server.
 Allows the stdio-based tp-mcp to run as an HTTP/SSE server on Render.
-Reads TP_COOKIE from environment variable and injects into tp_mcp credential store.
+Reads TP_AUTH_COOKIE from environment variable — tp_mcp uses it natively.
 """
 
 import os
 import sys
-import json
 import logging
 from contextlib import asynccontextmanager
-from pathlib import Path
 
 from mcp.server.sse import SseServerTransport
 from starlette.applications import Starlette
@@ -23,31 +21,14 @@ logging.basicConfig(
 )
 logger = logging.getLogger("tp-mcp-sse")
 
+# Validate TP_AUTH_COOKIE is set
+if not os.environ.get("TP_AUTH_COOKIE"):
+    logger.error("TP_AUTH_COOKIE environment variable is not set!")
+    sys.exit(1)
 
-def inject_cookie_from_env():
-    """
-    Reads TP_COOKIE env var and writes it to the credential file
-    that tp_mcp.auth.get_credential() expects (~/.tp-mcp/credentials.json).
-    """
-    cookie = os.environ.get("TP_COOKIE")
-    if not cookie:
-        logger.warning("TP_COOKIE environment variable not set!")
-        return False
+logger.info("TP_AUTH_COOKIE found, starting server...")
 
-    cred_dir = Path.home() / ".tp-mcp"
-    cred_dir.mkdir(parents=True, exist_ok=True)
-    cred_file = cred_dir / "credentials.json"
-
-    cred_data = {"cookie": cookie}
-    cred_file.write_text(json.dumps(cred_data))
-    logger.info("Cookie injected from TP_COOKIE env var into %s", cred_file)
-    return True
-
-
-# Inject cookie BEFORE importing tp_mcp so it's available at startup
-inject_cookie_from_env()
-
-# Now import the server (it will find the credential file)
+# Import server (tp_mcp reads TP_AUTH_COOKIE natively via get_storage_backend)
 from tp_mcp.server import server, _validate_auth_on_startup
 
 # Create SSE transport
@@ -69,7 +50,6 @@ async def handle_sse(request: Request):
 
 @asynccontextmanager
 async def lifespan(app):
-    """Validate auth on startup."""
     await _validate_auth_on_startup()
     yield
 
