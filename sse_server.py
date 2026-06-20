@@ -1,23 +1,21 @@
 """
 SSE wrapper for TrainingPeaks MCP Server.
 Allows the stdio-based tp-mcp to run as an HTTP/SSE server on Render.
+Reads TP_COOKIE from environment variable and injects into tp_mcp credential store.
 """
 
 import os
 import sys
+import json
 import logging
+from contextlib import asynccontextmanager
+from pathlib import Path
+
 from mcp.server.sse import SseServerTransport
 from starlette.applications import Starlette
 from starlette.routing import Mount, Route
 from starlette.requests import Request
 import uvicorn
-
-# Add the trainingpeaks-mcp package to path
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-
-# Import the existing server instance from tp_mcp
-from tp_mcp.server import server, _validate_auth_on_startup
-import asyncio
 
 logging.basicConfig(
     level=logging.INFO,
@@ -25,8 +23,36 @@ logging.basicConfig(
 )
 logger = logging.getLogger("tp-mcp-sse")
 
+
+def inject_cookie_from_env():
+    """
+    Reads TP_COOKIE env var and writes it to the credential file
+    that tp_mcp.auth.get_credential() expects (~/.tp-mcp/credentials.json).
+    """
+    cookie = os.environ.get("TP_COOKIE")
+    if not cookie:
+        logger.warning("TP_COOKIE environment variable not set!")
+        return False
+
+    cred_dir = Path.home() / ".tp-mcp"
+    cred_dir.mkdir(parents=True, exist_ok=True)
+    cred_file = cred_dir / "credentials.json"
+
+    cred_data = {"cookie": cookie}
+    cred_file.write_text(json.dumps(cred_data))
+    logger.info("Cookie injected from TP_COOKIE env var into %s", cred_file)
+    return True
+
+
+# Inject cookie BEFORE importing tp_mcp so it's available at startup
+inject_cookie_from_env()
+
+# Now import the server (it will find the credential file)
+from tp_mcp.server import server, _validate_auth_on_startup
+
 # Create SSE transport
 sse = SseServerTransport("/messages/")
+
 
 async def handle_sse(request: Request):
     """Handle SSE connections from Claude.ai."""
@@ -40,13 +66,13 @@ async def handle_sse(request: Request):
             server.create_initialization_options(),
         )
 
-from contextlib import asynccontextmanager
 
 @asynccontextmanager
 async def lifespan(app):
     """Validate auth on startup."""
     await _validate_auth_on_startup()
     yield
+
 
 app = Starlette(
     lifespan=lifespan,
