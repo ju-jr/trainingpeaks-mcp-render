@@ -40,12 +40,16 @@ async def handle_sse(request: Request):
             server.create_initialization_options(),
         )
 
-async def startup():
+from contextlib import asynccontextmanager
+
+@asynccontextmanager
+async def lifespan(app):
     """Validate auth on startup."""
     await _validate_auth_on_startup()
+    yield
 
 app = Starlette(
-    on_startup=[startup],
+    lifespan=lifespan,
     routes=[
         Route("/sse", endpoint=handle_sse),
         Mount("/messages/", app=sse.handle_post_message),
